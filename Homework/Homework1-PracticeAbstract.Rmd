@@ -1,0 +1,123 @@
+---
+title: "HW1"
+output:
+  html_document: default
+  word_document: default
+date: "2023-01-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The first homework assignment involves completing the introductory class survey (see link on class home page) and analyzing the data from the clinical trial described below.
+
+Cystic fibrosis (CF) is one of the most common serious genetic disorders, affecting approximately 30,000 individuals in the US. CF is frequently complicated by recurrent pulmonary infection caused by the bacterial strain pseudomonas aruginosa. A study was conducted to determine if an aerosolized antibiotic therapy was efficacious in treating infection in individuals with CF. Five hundred twenty CF patients from 10 to 60 years of age were randomized to receive the active treatment or placebo in a double-blind controlled trial. The primary endpoint was the pulmonary function test forced expiratory volume in one second (FEV1). Measurements were collected prior to randomization and again at the
+end of the 24-week study.
+
+The data are provided in an Excel file: fev1.xls.
+
+The variables are:
+TREAT: treatment assignment: 1=placebo, 2= active treatment.
+FEV11: pre-randomization forced expiratory volume measure (litres/sec) in one second.
+FEV12: post-randomization forced expiratory volume measure (litres/sec) in one second.
+
+The assignment is to analyze the data and report your results in an abstract of at most 500
+words. The abstract should have the following sections: Background, Approach, Results,
+Conclusions. Please also submit one table or figure to support your analysis.
+
+```{r}
+#read in the data
+library(ggplot2)
+library(readxl)
+library(knitr)
+dataset <- read_excel('fev1.xls')
+```
+
+```{r}
+#look at summary statistics
+summary(dataset)
+
+#create categorical treatment variable
+dataset$TREAT_c <- NA
+dataset$TREAT_c <- ifelse(dataset$TREAT == 1, 'Placebo','Treatment')
+```
+
+
+```{r}
+#This is paired data, so we are interested in the difference in post-randomization FEV and pre-randomization FEV.
+dataset$diff <- dataset$FEV12 - dataset$FEV11
+
+#determine if data are normally distributed
+summary(dataset$diff) #mean != median
+hist(dataset$diff) #appears skewed
+```
+
+```{r}
+#look at distribution by treatment group
+
+#create datasets for each group
+trtgrp <- dataset[dataset$TREAT == 2,]
+plagrp <- dataset[dataset$TREAT == 1,]
+
+#look at difference in FEV1
+summary(trtgrp$diff)
+summary(plagrp$diff)
+
+```
+
+```{r}
+#create summary table and figure
+ov_1q <- quantile(dataset$diff, .25)
+trt_1q <- quantile(trtgrp$diff, .25)
+pla_1q <- quantile(plagrp$diff, .25)
+
+ov_3q <- quantile(dataset$diff, .75)
+trt_3q <- quantile(trtgrp$diff, .75)
+pla_3q <- quantile(plagrp$diff, .75)
+
+table1 <- data.frame('Group' = c("Overall","Treatment","Placebo"), 
+       'N' = c(length(dataset$diff),length(trtgrp$diff), length(plagrp$diff)),
+       'Mean' = c(round(mean(dataset$diff),2),round(mean(trtgrp$diff),2), round(mean(plagrp$diff),2)),
+       'Median' = c(median(dataset$diff),median(trtgrp$diff), median(plagrp$diff)), 
+       'Minimum' = c(min(dataset$diff), min(trtgrp$diff), min(plagrp$diff)), 
+       'Maximum' = c(max(dataset$diff), max(trtgrp$diff), max(plagrp$diff)),
+       'IQR' = c(round(ov_3q - ov_1q,2), round(trt_3q - trt_1q,2), round(pla_3q - pla_1q,2))
+)
+kable(table1, caption = 'Table 1: Summary of Change in FEV1 by Treatment Group')
+
+ggplot(data=dataset, mapping = aes(x = diff, fill = TREAT_c)) +
+  geom_histogram() + 
+  facet_wrap('TREAT_c', nrow = 2) +
+  ggtitle('Figure 1: Distribution of Change in FEV by Treatment Group') + 
+  scale_fill_manual('Treatment Group', values = c('darkblue','skyblue')) +
+  labs(x = 'Difference in Post- and Pre- Randomization FEV1 (litres/sec)',
+       y = 'Number of Patients')
+
+```
+
+```{r}
+wilcox.test(trtgrp$diff, plagrp$diff)
+```
+
+
+## Effect of Aerosolized Antibiotic Therapy on FEV1 in Cystic Fibrosis Patients with Pulmonary Infection
+
+### Background
+
+Cystic Fibrosis (CF) is a genetic disorder that affects about 30,000 people in the US. It is a serious condition that is complicated by recurrent pulmonary infection. A two-arm placebo-controlled double-blind randomized study was conducted in CF patients age 10-60 with infections to investigate the effect of an aerosolized antibiotic therapy on forced expiratory volume in one second (FEV1), a measure of pulmonary function. FEV1 was measured before randomization and at the end of the study (24 weeks later).
+
+### Approach
+
+The distribution of the change in FEV1 was investigated through graphical measures and summary statistics. A Wilcoxon rank-sum test was conducted to determine if the treatment group had significantly different change in FEV1 than the placebo group. 
+
+### Results
+
+The median change in FEV1 over the course of the study in the treatment (N = 258) and placebo (N = 262) groups were 0.03 (IQR = 0.31) and 0.00 (IQR = 0.25), respectively. The range in the treatment group was -0.71 to 1.44, and the range in the placebo group was -0.93 to 1.37. Based on the Wilcoxon Rank-Sum test, there is very strong evidence of a difference in change in FEV1 between treatment and placebo (p-value < 0.0001, W = 41413). 
+
+### Conclusions
+
+There is evidence to suggest the treatment group resulted in a larger increase in FEV1, suggesting the therapy improved pulmonary function among CF patients with pulmonary infection. Figure 1 shows the distributions of change in FEV1 are very similar for treatment vs placebo, and the difference in medians is 0.03. While there are statistically significant differences in the groups, the clinical significance should be discussed with a physician.
+
+
+
