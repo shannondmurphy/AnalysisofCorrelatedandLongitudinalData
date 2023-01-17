@@ -31,6 +31,7 @@ Conclusions. Please also submit one table or figure to support your analysis.
 library(ggplot2)
 library(readxl)
 library(knitr)
+library(car)
 dataset <- read_excel('fev1.xls')
 ```
 
@@ -86,9 +87,11 @@ table1 <- data.frame('Group' = c("Overall","Treatment","Placebo"),
 )
 kable(table1, caption = 'Table 1: Summary of Change in FEV1 by Treatment Group')
 
-ggplot(data=dataset, mapping = aes(x = diff, fill = TREAT_c)) +
-  geom_histogram() + 
-  facet_wrap('TREAT_c', nrow = 2) +
+ggplot(data=dataset, mapping = aes(x = diff, y = TREAT_c, fill = TREAT_c)) +
+ # geom_violin() + 
+  geom_boxplot() +
+ # geom_jitter() +
+ # facet_wrap('TREAT_c', nrow = 2) +
   ggtitle('Figure 1: Distribution of Change in FEV by Treatment Group') + 
   scale_fill_manual('Treatment Group', values = c('darkblue','skyblue')) +
   labs(x = 'Difference in Post- and Pre- Randomization FEV1 (litres/sec)',
@@ -99,7 +102,6 @@ ggplot(data=dataset, mapping = aes(x = diff, fill = TREAT_c)) +
 ```{r}
 wilcox.test(trtgrp$diff, plagrp$diff)
 ```
-
 
 ## Effect of Aerosolized Antibiotic Therapy on FEV1 in Cystic Fibrosis Patients with Pulmonary Infection
 
