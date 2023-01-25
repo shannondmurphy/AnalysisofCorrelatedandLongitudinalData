@@ -1,0 +1,212 @@
+---
+title: "Homework2-PracticeAbstract"
+output:
+  word_document: default
+  html_document: default
+date: "2023-01-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+An experiment was conducted to (a) investigate the effects of a drug, human granulocyte colony stimulating factor (gcsf), on the growth of certain cells in human blood and (b) to determine if the effect of the drug is influenced by age. Thirty-eight subjects were randomized to one of three dose levels of gcsf: 0, 30, or 300 micrograms. Blood samples were collected at three times: prior to drug administration, one day after the drug treatment, and five days after treatment. The number of cell colonies per ml of blood (colony forming units) was recorded.
+
+The data are provided in an Excel file gcsf.xlsx on the class website. The study variables
+are:
+id: subject id number
+gcsf: drug dose (in 0, 30, or 300 micrograms)
+age: age of subject in years
+cfu0: day 0 colony forming units (baseline)
+cfu1: day 1 colony forming units
+cfu5: day 5 colony forming units
+
+The above data format is “wide” (e.g., one record per subject). The data are saved in the worksheet, gcsfWide. The dataset is also formatted in “long” format in the worksheet, gcsfLong, with variables: id, days (1, 2, 5), gcsf (0, 30, 300), age and cfu. Like Assignment 01, the objective is to investigate the scientific question or questions. Please analyze these data and report your results in an abstract of at most 500 words. Please also submit one table or figure to support your analysis.
+
+
+```{r}
+#read in the data
+library(ggplot2)
+library(readxl)
+library(knitr)
+library(car)
+library(rstatix)
+library(ggpubr)
+library(lme4)
+library(lmerTest)
+library(effects)
+data_wide <- read_excel('gcsf.xlsx', sheet = 'gcsfWide')
+data_long <- read_excel('gcsf.xlsx', sheet = 'gcsfLong')
+```
+
+```{r}
+#look at summary statistics
+summary(data_long)
+
+#change id, gcsf, and days to factor variables
+data_long$gcsf_c <- as.factor(data_long$gcsf)
+data_long$days_c <- as.factor(data_long$days)
+data_long$id_c <- as.factor(data_long$id)
+
+#create label variable for plot
+data_long$day_label <- NA
+data_long$day_label[data_long$days == 0] <- 'Day 0'
+data_long$day_label[data_long$days == 1] <- 'Day 1'
+data_long$day_label[data_long$days == 5] <- 'Day 5'
+
+data_long$dose_label <- NA
+data_long$dose_label[data_long$gcsf == 0] <- '0 micrograms'
+data_long$dose_label[data_long$gcsf == 30] <- '30 micrograms'
+data_long$dose_label[data_long$gcsf == 300] <- '300 micrograms'
+```
+
+With this data, a repeated measure ANCOVA could be fit to test for difference in means with the cfu as the output variable and gcsf, age, time, and id as input variables. The assumptions of repeated measures ANCOVA include normality of the groups. 
+
+```{r, fig.height=10, fig.width = 10}
+#look at distribution of cfu by treatment group
+ggplot(aes(x = cfu, fill = gcsf_c), data = as.data.frame(data_long)) +
+  geom_histogram() + 
+  facet_wrap(c('day_label','dose_label')) +
+  ggtitle("Distribution of CFU by Day and Dose of GCSF") +
+  labs(fill = "GCSF Dose")
+
+#spaghetti plot
+ggplot(data = data_long, aes(x = days, y = cfu, group = id, colour = gcsf_c)) + geom_line()
+
+```
+
+
+Based on the above plot, the normality assumption of repeated measures ANCOVA is not satisfied. As an alternate approach, two separate non-parametric tests will be used to determine if the change in 
+
+```{r}
+#get summary stats
+summary_stats <- data_long %>%
+  group_by(days, gcsf) %>%
+  get_summary_stats(cfu, type = "median_iqr")
+
+overall <- data_long %>% group_by(gcsf) %>% get_summary_stats(cfu, type = "median_iqr")
+
+summary_stats[10:12,] <- data.frame(days = rep(NA,3), overall)
+
+
+#get summary of age by treatment group
+summary_age<- data_long %>%
+  group_by(gcsf) %>%
+  get_summary_stats(age, type = "median_iqr")
+```
+
+```{r}
+#create summary table
+table1 <- data.frame(summary_stats) %>% 
+                select(-'variable') %>% 
+                reshape(idvar = "gcsf",
+                         timevar = "days",
+                         direction = "wide")
+
+#table1$median.Overall <- overall$median
+#table1$iqr.Overall <- overall$iqr
+
+table1_1 <- table1 %>% select(-c('n.1','n.5','n.NA'))
+
+table1_1$Age_Median <- summary_age$median
+table1_1$Age_IQR <- summary_age$iqr
+
+#reorder columns
+table1_1 <- table1_1 %>% select(gcsf, n.0, Age_Median, Age_IQR,
+                      median.0, iqr.0,
+                      median.1, iqr.1,
+                      median.5, iqr.5,
+                      median.NA, iqr.NA)
+
+#rename columns for table
+colnames(table1_1) <- c("GCSF Dose (micrograms)","N",
+                        'Age Median', 'Age IQR',
+                        "Day 0 CFU Median", "Day 0 CFU IQR",
+                        "Day 1 CFU Median", "Day 1 CFU IQR",
+                        "Day 5 CFU Median", "Day 5 CFU IQR",
+                        "Overall CFU Median", "Overall CFU IQR"
+                        )
+
+kable(table1_1, caption = 'Table 1: Summary of CFU by Day and Treatment Group')
+```
+
+```{r}
+#perform analysis - mixed effects
+#unique intercept by pt id
+#unique treatment effect per measurement time
+#age and treatment interaction
+model1 <- lmerTest::lmer(cfu ~ age*gcsf_c + (1+gcsf_c|days_c) + (1|id_c), data = data_long)
+summary(model1)
+
+#model does not converge
+#try no age/treatment interaction
+model2 <- lmerTest::lmer(cfu ~ age + gcsf_c + (1+gcsf_c|days_c) + (1|id_c), data = data_long)
+summary(model2)
+
+#model does not converge either
+```
+
+
+```{r}
+#plots would be useful if model converged properly 
+
+# plot(Effect("gcsf_c", model2))
+# plot(Effect("age", model2))
+# 
+# lattice::dotplot(ranef(model2))$days_c
+```
+
+```{r}
+#because the mixed effects model does not converge, 
+#consider standard ANCOVA without time = 1
+
+#test assumptions
+#verify covariates are independent of treatment
+anova_model_indep <- aov(age ~ gcsf, data = data_wide)
+anova_model_indep2 <- aov(cfu0 ~ gcsf, data = data_wide)
+#view summary of anova model
+summary(anova_model_indep)
+summary(anova_model_indep2)
+
+#verify homogeneity of variance
+leveneTest(cfu5~as.factor(gcsf), data = data_wide)
+  #note that this assumption is violated
+  #ANCOVA is fairly robust to assumption violations, so we will proceed.
+
+#conduct ANCOVA
+#interaction model
+ancova_model <- aov(cfu5 ~ cfu0 + gcsf*age, data = data_wide)
+Anova(ancova_model, type="III") 
+
+#no interaction
+ancova_model2 <- aov(cfu5 ~ cfu0 + gcsf + age, data = data_wide)
+Anova(ancova_model2, type="III") 
+
+```
+
+
+
+
+
+## Effect of Different Doses of Human Granulocyte Colony Stimulating Factor (GCSF) on Blood Cell Colony Forming Unit (CFU) Count
+
+### Background
+
+Human granulocyte colony stimulating factor (GCSF) is produced by various tissues in the human body and plays a role in the production of blood cells$^1$. There are pharmaceutical versions of GCSF that may aid in the production of colony forming units in human blood. This could be useful in helping patients recover from chemotherapy by promoting production of blood cells after chemotherapy halted the production. It is hypothesized that the effect of GCSF may vary by age.
+
+### Approach
+
+Thirty-eight subjects were randomized to one of three dose levels of GCSF (0, 30, or 300 micrograms). Number of cell colonies per ml of blood (CFU) was recorded three times for each patient, before randomization (day 0), one day after treatment (day 1), and five days after treatment (day 5). An ANCOVA model was used to determine if the dose of GCSF effected the CFU from day 0 to day 5 and if there was an age and dose interaction. Summary statistics (median and IQR) were reported for each day and dose level. 
+
+### Results
+
+The median CFU on day 5 for 300 microgram dose was much larger than the other days and treatment groups (see Table 1). The difference in median CFU for day 1 vs day 0 for 0, 30, and 300 micrograms was -5.0, -3.0, and -2.5, respectively. The difference in median CFU for day 5 vs day 0 for 0, 30, and 300 micrograms was -1.0, 1.5, and 65.5, respectively. Based on the ANCOVA, there is no evidence of a change in treatment effect by age (p-value = 0.56) after adjusting for dose of GCSF and day 0 CFU. The ANCOVA model was refit without the interaction to more precisely estimate the treatment effect. There is very strong evidence of a difference in CFU by dose of GCSF (p-value = 0.0001) after adjusting for age and day 0 CFU.  
+
+
+### Conclusions
+
+There is no evidence of a difference in treatment effect by age, and there is very strong evidence of a difference in treatment effect by dose. It is clear that at day 5, the 300 microgram dose of GCSF had a much larger effect on CFU count than the 30 and 0 microgram doses.
+
+### References
+
+1. Granulocyte colony stimulating factor (G-CSF). Granulocyte colony stimulating factor (G-CSF) | Cancer information | Cancer Research UK. (2020, September 28). Retrieved January 25, 2023, from https://www.cancerresearchuk.org/about-cancer/treatment/drugs/g-csf 
