@@ -1,0 +1,99 @@
+---
+title: "Homework3"
+output:
+  word_document: default
+  html_document: default
+date: "2023-02-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this assignment, you will explore between and within-cluster effects in a longitudinal setting with a binary outcome. You will explore concepts parallel to those discussed in Lecture 6 for a clustered data linear regression setting. Two hundred seventy-five children were followed for up to six quarters and observed for respiratory infection and indication of vitamin A deficiency. Gender and age were also recorded (age at baseline and at each visit). The dataset, resp.xls, is available on Sakai in the Data Files folder at the Resources link. The variables are:
+
+id: child ID
+
+resp: indicator of respiratory infection (1=infected, 0=not infected)
+
+xp: indicator of xerophthalmia – vitamin A deficiency (1=yes, 0=no)
+
+sex: 0=male, 1=female
+
+time: visit number (1 to 6)
+
+baseage: baseline age in months (centered at 32 months)
+
+season: 1-4
+
+age: age in months (centered at 32)
+
+```{r}
+library(readxl)
+library(lme4)
+library(tidyverse)
+resp <- read_excel('resp.xlsx')
+head(resp)
+```
+
+
+
+## Part a) Which variables are between-cluster variables, and which are within-cluster variables?
+
+Define a cluster as being one child's measurements. Then, between-cluster variables are ID, sex, and baseage, while resp, age, xp, time, and season are within-cluster variables. The within-cluster variables can have different values in the same cluster, while the between-cluster variable is the same for all measurements in a cluster.
+
+
+## Part b) Fit a logistic regression model with resp as the outcome variable and predictors age, xp and sex. Interpret the age effect.
+
+```{r}
+model1 <- glmer(resp~age+xp+sex+(1|id), family="binomial", data=resp)
+summary(model1)
+```
+
+After controlling for xp and sex, a one month older age on average has 3% = 100*(1-exp(-0.027)) lower odds of respiratory infection than a one month lower age. This is accounting for both within and between cluster effects.
+
+## Part c) Expand the previous model to include between-cluster and within-cluster age effects. Please specify your model and indicate how you constructed your predictors for age. You do not need to fit the new model in part (c). (Hint: see Lecture 6 slides.)
+
+The previous model could be expanded by splitting the age term into two separate terms, one with baseline age and one with change in age since baseline. The change in age term would represent the within-cluster age effect, while the baseline age would representa the between-cluster age effect. This model could be written as
+
+$$logit(resp_i) = \beta_0 +\beta_1(baseage) + \beta_2(age-baseage) + \beta_3(xp) + \beta_4(sex) + b_i$$
+
+The previous model was 
+$$logit(resp_i) = \beta_0 +\beta_1(age) + \beta_2(xp) + \beta_2(sex) + b_i$$
+
+
+## Part d) Now fit a logistic regression model with baseline age, change in age from baseline, xp and sex. Give careful interpretations of the two age effects. Contrast them to those in part (b).
+```{r}
+resp$agediff <- resp$age-resp$baseage
+model2 <- glmer(resp~agediff+baseage+xp+sex+(1|id), family="binomial", data=resp)
+summary(model2)
+```
+
+After controlling for xp and sex, on average, for a one month increase in age the odds of respiratory infection increase by exp(0.012) = 1.012 times, or about 1.2%
+
+After controlling for xp and sex, on average, for a child one month older at baseline than another child, the odds of respiratory infection decrease by exp(-0.032) = 0.969 times, or about 3.1%.
+
+This is different than the results above because it shows that within a cluster, an increase in age results in higher odds of respiratory infection. However, for a group one month older than another group, the odds of infection are actually lower. The previous model only suggested a decrease in odds of infection for an older age.
+
+## Part e) Fit the models in (b) and (d), but this time including season effects (treat it as a categorical predictor). Give explanations for any large changes in the age effects you observe when season is added to the models compared to your previous results. Use some descriptive statistics or graphics to support your explanations.
+
+```{r}
+model3 <- glmer(resp~age + xp + sex + as.factor(season) + (1|id), family="binomial", data=resp)
+summary(model3)
+```
+
+The age coefficient did not change much in this model (-0.027 to -0.026) after adding season.
+
+```{r}
+model4 <- glmer(resp~agediff + baseage + xp + sex + as.factor(season) + (1|id), family="binomial", data=resp)
+summary(model4)
+```
+
+The agediff coefficient changed from 0.012 to -0.416 after adding season to the model. The baseage coefficient did not change much (-0.032 to -0.034). This happened because agediff is highly correlated with season, as shown in the table below. It is possible that what was previously interpreted as the within-subject age effect is actually due to the season rather than the change in age.
+
+```{r}
+#look at agediff by season
+table(resp$agediff,resp$season)
+```
+
+
