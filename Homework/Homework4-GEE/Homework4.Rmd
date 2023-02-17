@@ -1,0 +1,303 @@
+---
+title: "Homework 4"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+date: "2023-02-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1: This exercise involves the analysis of Rao’s bone growth data of 20 boys. The data are available on the class web page in the data files, rao.xls (Excel), rao.csv (CSV), and rao.dta (Stata). The variables are boy (boy ID number), age (1=8.0 years, 2=8.5 years, 3=9.0 years, 4=9.5 years), ht (ramus height in mm).
+
+```{r}
+rao <- read.csv("C:/Users/sdm98/Desktop/BIOSTAT718/rao.csv", header = TRUE, sep = ',')
+
+rao$age_yr <- NA
+rao$age_yr[rao$age == 1] <- 8
+rao$age_yr[rao$age == 2] <- 8.5
+rao$age_yr[rao$age == 3] <- 9
+rao$age_yr[rao$age == 4] <- 8.5
+
+```
+
+### Part a) Estimate the rate of bone growth per year using a marginal model. Give a 95% confidence interval for the rate. Do three separate analyses, with (1) independence, (2) exchangeable correlation, and (3) a different working correlation of your choice (justify your choice).
+
+```{r}
+#load gee library
+library(geepack) 
+library(gee)
+library(tidyverse)
+```
+
+```{r}
+#run independent model
+indep <- gee(ht ~ age_yr, id = boy, corstr = 'independence', data = rao)
+summary(indep)
+```
+
+```{r}
+#get confidence intervals
+#age coefficient +/- 1.96*std error
+lb <- indep$coefficients[2] - 1.96*0.285
+ub <- indep$coefficients[2] + 1.96*0.285
+paste("Estimated bone growth per year is", round(indep$coefficients[2],3), 'mm.')
+paste("Independence 95% CI = (",round(lb,3),',',round(ub,3),')')
+```
+
+```{r}
+#run exchangeable model
+exch <- gee(ht ~ age_yr, id = boy, corstr = 'exchangeable', data = rao)
+summary(exch)
+```
+
+```{r}
+#get confidence intervals
+#age coefficient +/- 1.96*std error
+lb_exch <- exch$coefficients[2] - 1.96*0.285
+ub_exch <- exch$coefficients[2] + 1.96*0.285
+paste("Estimated bone growth per year is", round(exch$coefficients[2],3), 'mm.')
+paste("Exchangeable 95% CI = (",round(lb_exch,3),',',round(ub_exch,3),')')
+```
+
+```{r}
+#need to determine correlation structure to choose third model
+
+#first, look at the change in height over time for each boy
+mnht <- with(rao, tapply(ht,age,mean))
+rao$mnht <- mnht[match(rao$age,names(mnht))]
+sdht <- with(rao, tapply(ht, age, sd))
+rao$sdht <- sdht[match(rao$age,names(sdht))]
+rao$stdht <- (rao$ht - rao$mnht)/rao$sdht
+
+attach(rao)
+interaction.plot(age,boy,stdht,legend = F, col = 1:4,lty=1:4, xlab = 'Time',ylab= 'Standardized Height', lwd = 1.5)
+```
+
+
+```{r}
+#next, examine residuals
+
+#fit independent model to get residuals
+mod <- lm(ht~age, data = rao) 
+rao$res <- mod$residuals
+
+#plot scatter plots of residuals by time points
+rao.sort <- rao[order(rao$boy),][,c(1,2,7)]
+wide <- reshape(rao.sort,timevar = "age",idvar = c("boy"),direction="wide")
+
+pairs(wide[,2:5],pch=19)
+
+#get correlation table
+round(cor(wide[,2:5]),4)
+```
+
+Based on the above correlations, it is possible an AR(1) model is appropriate because the correlations between the time points 1 apart were 0.941, 0.918, and 0.946, which are similar. 
+
+
+```{r}
+#fit AR1 model
+ar1 <- gee(ht ~ age_yr, id = boy, corstr = 'AR-M', data = rao)
+summary(ar1)
+```
+
+```{r}
+#get confidence intervals
+#age coefficient +/- 1.96*std error
+lb_ar <- ar1$coefficients[2] - 1.96*0.219
+ub_ar <- ar1$coefficients[2] + 1.96*0.219
+paste("Estimated bone growth per year is", round(ar1$coefficients[2],3), 'mm.')
+paste("AR1 95% CI = (",round(lb_ar,3),',',round(ub_ar,3),')')
+```
+
+
+### Part b) [BONUS] Estimate the rate of bone growth per year using a random effects model (using a single random effect only). Give a 95% CI for the rate. Do you think this inference is valid? Explain in detail.
+
+```{r}
+library(lme4)
+rand_eff <- lmer(ht ~ age_yr + (1|boy), data = rao)
+summary(rand_eff)
+```
+
+```{r}
+ints <- confint(rand_eff)[4,]
+
+paste("Estimated bone growth per year is", 1.850, 'mm.')
+paste("95% CI = (",round(ints[1],3),',',round(ints[2],3),')')
+```
+
+This model assumes independent variance, so the inference is likely invalid.
+
+
+### Part c) Estimate the rate of bone growth per year for each boy separately (hint: use a derived variable). Calculate the mean and standard deviation of the rates. Suggest a method for using these results to compute a 95% CI for the overall rate and compute this interval.
+
+```{r}
+#plot ramus height over time
+attach(rao)
+interaction.plot(age,boy,ht,legend = F, col = 1:4,lty=1:4, xlab = 'Time',ylab= 'Height', lwd = 1.5)
+```
+
+```{r}
+#derive variable for avg change in ramus height for each boy
+rao.sort2 <- rao[order(rao$boy),][,c(1,2,3)]
+wide2 <- reshape(rao.sort2,timevar = "age",idvar = c("boy"),direction="wide")
+
+wide2$rate <- (wide2$ht.4 - wide2$ht.1)/2
+
+#get mean and sd
+paste('Mean of Average Change in Ramus Height per Year =',mean(wide2$rate))
+paste('SD of Average Change in Ramus Height per Year =',round(sd(wide2$rate),3))
+
+```
+
+```{r}
+hist(wide2$rate)
+t.test(wide2$rate)
+```
+
+Based on the results of the t-test, the estimated average rate of growth (mm/year) is 1.42 with a 95% CI = (1.03,1.82).
+
+
+### Part d) Compare the results in (a), (b), and (c), and explain the similarities and differences between them.
+
+
+Part a Independence 95% CI = (1.291 , 2.409), Exchangeable 95% CI = (1.291 , 2.409), AR1 95% CI = (0.285 , 1.144)
+
+Part b 95% CI = (1.035, 2.665)
+
+Part c 95% CI = (1.03,1.82)
+
+
+The AR1 model had the most different results. This is likely because it specifies a variance structure that is very incorrect for this data set. The independent and exchangeable models in part a gave the exact same answers because of the robust standard errors from the sandwich estimators. Part b gave a wider confidence interval because it did not use a robust estimate. Part c gave an answer similar to part b but with a narrower confidence interval because it is making more strict assumptions for the t-test, which is likely too conservative of an estimate. Overall, I would probably trust the independent model in part a the most because it relaxes the assumptions made in part b and accounts for the correlation while using all of the data (unlike part c).
+
+
+
+
+
+
+
+
+
+
+## Question 2: This exercise involves an analysis of the data from a chemotherapy trial for seizures in epileptic patients. The data description is below. The data set, epilepsy.xls, is available on the Sakai class website.
+
+Data are from Thall and Vail, Biometrics 46:657-671, 1990
+
+Results of a randomized clinical trial of Progabide for treatment of patients with epilepsy (in wide format). Data on N=59 patient had reported seizures during four consecutive two-week periods following randomization. Baseline seizure counts during the eight-week period prior to treatment assignment were also collected.
+
+Var Name Description Range/Values
+1 id Patient ID 104-236
+2 y1 Seizure count in 1st period 0-102
+3 y2 Seizure count in 2nd period 0-65
+4 y3 Seizure count in 3rd period 0-76
+5 y4 Seizure count in 4th period 0-63
+6 tx Treatment assignment 0 = Control, 1 = Progabide
+7 y0 Seizure count, 8-week 0-151 baseline period
+8 age Age (in years) at baseline 18-42
+
+```{r}
+library(readxl)
+epilepsy <- read_excel("C:/Users/sdm98/Desktop/BIOSTAT718/epilepsy.xls")
+```
+
+
+### Part a) Estimate and test the significance of the treatment effect on the average seizure rate after randomization. Use a Poisson regression model with adjustment for the baseline seizure rate and age. (Please use a transformation of the baseline count that seems appropriate for this model.) Do this analysis two ways: (1) using naïve variance estimates, and (2) using robust variance estimates. Explain the difference between the naïve variance and robust variance estimates in this analysis.
+
+run gee using independent correlation to get naive and robust
+
+```{r}
+#transform y0 to be rate for a two-week period to match other rates
+epilepsy$y0_t <- epilepsy$y0/4
+
+#convert from wide to long
+epilepsy_l <- gather(epilepsy, y, count, y1:y4, factor_key = TRUE)
+epilepsy_l
+```
+
+```{r}
+indep2 <- gee(count ~ rx + age + y0_t, family = 'poisson', id = id, corstr = 'independence', data = epilepsy_l)
+summary(indep2)
+```
+
+```{r}
+#get confidence intervals
+#naive
+lb_indep2 <- indep2$coefficients[2] - 1.96*0.10785
+ub_indep2 <- indep2$coefficients[2] + 1.96*0.10785
+paste("The growth rate for those on the treatment is estimated to be", round(exp(indep2$coefficients[2]),3), 'times the seizure rate for those not on the treatment after controlling for baseline age and baseline seizure rate.')
+paste("Naive 95% CI = (",round(exp(lb_indep2),3),',',round(exp(ub_indep2),3),')')
+
+#robust
+lb_indep2_r <- indep2$coefficients[2] - 1.96*0.11390
+ub_indep2_r <- indep2$coefficients[2] + 1.96*0.11390
+paste("Robust 95% CI = (",round(exp(lb_indep2_r),3),',',round(exp(ub_indep2_r),3),')')
+```
+
+The naive variance estimate is generated using the poisson model. The robust variance estimate is generated such that the poisson assumption is more relaxed. This results in a wider confidence interval.
+
+### Part b) Estimate and test the significance of the treatment effect using a GEE analysis of the individual, 2-week seizure counts. Use a Poisson-like regression model with a working correlation matrix that seems appropriate for these data (justify your choice), and adjust for baseline seizure rate and age as in part (a).
+
+
+#### Determine correlation structure
+
+```{r}
+#first, look at the change in count over time for each patient
+mnct <- with(epilepsy_l, tapply(count,y,mean))
+epilepsy_l$mnct <- mnct[match(epilepsy_l$y,names(mnct))]
+sdct <- with(epilepsy_l, tapply(count, y, sd))
+epilepsy_l$sdct <- sdct[match(epilepsy_l$y,names(sdct))]
+epilepsy_l$sdct <- (epilepsy_l$count - epilepsy_l$mnct)/epilepsy_l$sdct
+
+interaction.plot(epilepsy_l$y,epilepsy_l$id,epilepsy_l$sdct,legend = F, col = 1:4,lty=1:4, xlab = 'Period',ylab= 'Standardized Count', lwd = 1.5)
+```
+
+
+```{r}
+#next, examine residuals
+
+#fit independent model to get residuals
+mod2 <- lm(count~y, data = epilepsy_l) 
+epilepsy_l$res <- mod2$residuals
+
+#plot scatter plots of residuals by time points
+pairs(epilepsy[,2:5],pch=19)
+
+#get correlation table
+round(cor(epilepsy[,2:5]),4)
+```
+
+This suggests an unstructured correlation is most appropriate.
+
+#### Run Model 
+```{r}
+#run unstructured gee model
+unstr2 <- gee(count ~ rx + age + y0_t, family = 'poisson', id = id, corstr = 'unstructured', data = epilepsy_l)
+summary(unstr2)
+```
+
+```{r}
+#get confidence intervals
+lb3 <- unstr2$coefficients[2] - 1.96*0.11390
+ub3 <- unstr2$coefficients[2] + 1.96*0.11390
+paste("The seizure rate for those on the treatment is estimated to be", round(exp(unstr2$coefficients[2]),3), 'times the seizure rate for those not on the treatment after controlling for baseline age and baseline seizure rate.')
+paste("95% CI = (",round(exp(lb3),3),',',round(exp(ub3),3),')')
+```
+
+This is a non-significant result, meaning there is no evidence of a treatment effect on seizure rate after controlling for baseline age and baseline seizure rate.
+
+### Part c) Compare the results on the treatment effect for (a) and (b). Are there substantial differences in the inference about the treatment effect? If so, give possible reasons for these differences. What method do you feel is best for performing inference about the treatment effect (please give reasons)?
+
+
+Estimated average effect = 0.858 for all models.
+
+Part a Naive 95% CI = (0.695, 1.06)
+
+Part a Robust 95% CI = (0.687, 1.073)
+
+Part b Robust 95% CI = (0.687, 1.073)
+
+The robust estimates gave the same results, so working independence with a robust estimator would be the best (simplest) choice. Robust is prefered to the naive estimate because it is relaxing the assumptions of the model to better estimate the true patterns in the data.
+
